@@ -26,6 +26,7 @@ const roleSchema = new mongoose.Schema({
     githubRepo: { type: String, required: true },
     githubUsernames: { type: [String], default: [] }, 
     status: { type: String, default: '' },
+    marks: { type: [Number], default: [] }, // New field for marks
 });
 
 const Role = mongoose.model('Role', roleSchema);
@@ -91,6 +92,24 @@ const commands = [
             },
         ],
     },
+        {
+            name: 'setmarks',
+            description: 'Set marks for a specific role',
+            options: [
+                {
+                    type: 3,
+                    name: 'role_name',
+                    description: 'The name of the role',
+                    required: true,
+                },
+                {
+                    type: 3,
+                    name: 'marks',
+                    description: 'Comma-separated list of marks (3 entries)',
+                    required: true,
+                },
+            ],
+        },
 ];
 
 const token = process.env.TOKEN; 
@@ -131,7 +150,52 @@ client.on('interactionCreate', async interaction => {
     if (!interaction.isCommand()) return;
 
     const { commandName, options } = interaction;
-
+    if (commandName === 'setmarks') {
+        const roleName = options.getString('role_name');
+        const marksInput = options.getString('marks');
+    
+        // Check if the user has admin permissions
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            await interaction.reply("You do not have permission to use this command.");
+            return;
+        }
+    
+        const guild = interaction.guild;
+        const role = guild.roles.cache.find(r => r.name === roleName);
+        if (!role) {
+            await interaction.reply(`The role "${roleName}" does not exist in this guild.`);
+            return;
+        }
+    
+        // Parse the marks input
+        const marks = marksInput.split(',').map(mark => {
+            const trimmedMark = mark.trim();
+            return trimmedMark ? parseInt(trimmedMark) : null; // Allow null for skipped marks
+        });
+    
+        // Ensure marks array has exactly 3 entries
+        while (marks.length < 3) {
+            marks.push(null); // Fill with null if fewer than 3 marks are provided
+        }
+    
+        // Ensure only the first three marks are considered
+        const finalMarks = marks.slice(0, 3);
+    
+        try {
+            const existingRoleData = await Role.findOne({ name: roleName });
+            if (!existingRoleData) {
+                await interaction.reply(`No data found for role "${roleName}". Please add role data first using the /addroledata command.`);
+                return;
+            }
+    
+            existingRoleData.marks = finalMarks; // Update the marks
+            await existingRoleData.save();
+            await interaction.reply(`Marks for role "${roleName}" have been updated to: ${finalMarks.join(', ')}.`);
+        } catch (error) {
+            console.error('Error updating role marks:', error);
+            await interaction.reply("An error occurred while updating the role marks.");
+        }
+    }
     if (commandName === 'addroledata') {
         const roleName = options.getString('role_name');
         const githubRepo = options.getString('github_repo') || null; // Default to null if not provided
@@ -282,6 +346,10 @@ client.on('interactionCreate', async interaction => {
                             : 'No usernames available' 
                     },
                     { name: 'Status:', value: roleData.status || 'No status available' },
+                    { name: 'Marks:', value: roleData.marks.length > 0 
+                        ? roleData.marks.join(', ') 
+                        : 'No marks available' 
+                    },
                     { name: 'Members with this Role:', value: memberNames }
                 )
                 .setTimestamp();
