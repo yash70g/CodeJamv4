@@ -16,7 +16,6 @@ mongoose.connect(uri, { useNewUrlParser: true, useUnifiedTopology: true })
     .then(() => console.log('MongoDB connected successfully'))
     .catch(err => console.error('MongoDB connection error:', err));
 
-
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMembers]
 });
@@ -26,7 +25,7 @@ const roleSchema = new mongoose.Schema({
     githubRepo: { type: String, required: true },
     githubUsernames: { type: [String], default: [] }, 
     status: { type: String, default: '' },
-    marks: { type: [Number], default: [] }, // New field for marks
+    marks: { type: [Number], default: [] },
 });
 
 const Role = mongoose.model('Role', roleSchema);
@@ -92,24 +91,24 @@ const commands = [
             },
         ],
     },
-        {
-            name: 'setmarks',
-            description: 'Set marks for a specific role',
-            options: [
-                {
-                    type: 3,
-                    name: 'role_name',
-                    description: 'The name of the role',
-                    required: true,
-                },
-                {
-                    type: 3,
-                    name: 'marks',
-                    description: 'Comma-separated list of marks (3 entries)',
-                    required: true,
-                },
-            ],
-        },
+    {
+        name: 'setmarks',
+        description: 'Set marks for a specific role',
+        options: [
+            {
+                type: 3,
+                name: 'role_name',
+                description: 'The name of the role',
+                required: true,
+            },
+            {
+                type: 3,
+                name: 'marks',
+                description: 'Comma-separated list of marks (3 entries)',
+                required: true,
+            },
+        ],
+    },
 ];
 
 const token = process.env.TOKEN; 
@@ -150,45 +149,43 @@ client.on('interactionCreate', async interaction => {
     if (!interaction.isCommand()) return;
 
     const { commandName, options } = interaction;
+    const hasPermission = interaction.member.permissions.has(PermissionsBitField.Flags.Administrator) || 
+                          interaction.member.roles.cache.some(role => role.name === "CT25");
+
     if (commandName === 'setmarks') {
         const roleName = options.getString('role_name');
-        const marksInput = options.getString('marks');
-    
-        // Check if the user has admin permissions
-        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        const marksInput = options.getString('marks')
+        if (!hasPermission) {
             await interaction.reply("You do not have permission to use this command.");
             return;
         }
-    
+
         const guild = interaction.guild;
         const role = guild.roles.cache.find(r => r.name === roleName);
         if (!role) {
             await interaction.reply(`The role "${roleName}" does not exist in this guild.`);
             return;
         }
-    
-        // Parse the marks input
+
         const marks = marksInput.split(',').map(mark => {
             const trimmedMark = mark.trim();
-            return trimmedMark ? parseInt(trimmedMark) : null; // Allow null for skipped marks
+            return trimmedMark ? parseInt(trimmedMark) : null;
         });
-    
-        // Ensure marks array has exactly 3 entries
+
         while (marks.length < 3) {
-            marks.push(null); // Fill with null if fewer than 3 marks are provided
+            marks.push(null);
         }
-    
-        // Ensure only the first three marks are considered
+
         const finalMarks = marks.slice(0, 3);
-    
+
         try {
             const existingRoleData = await Role.findOne({ name: roleName });
             if (!existingRoleData) {
                 await interaction.reply(`No data found for role "${roleName}". Please add role data first using the /addroledata command.`);
                 return;
             }
-    
-            existingRoleData.marks = finalMarks; // Update the marks
+
+            existingRoleData.marks = finalMarks;
             await existingRoleData.save();
             await interaction.reply(`Marks for role "${roleName}" have been updated to: ${finalMarks.join(', ')}.`);
         } catch (error) {
@@ -196,26 +193,27 @@ client.on('interactionCreate', async interaction => {
             await interaction.reply("An error occurred while updating the role marks.");
         }
     }
+
     if (commandName === 'addroledata') {
         const roleName = options.getString('role_name');
-        const githubRepo = options.getString('github_repo') || null; // Default to null if not provided
+        const githubRepo = options.getString('github_repo') || null;
         const githubUsernames = options.getString('github_usernames') ? options.getString('github_usernames').split(',').map(username => username.trim()) : [];
-        const status = options.getString('status') || null; // Default to null if not provided
+        const status = options.getString('status') || null;
         const guild = interaction.guild;
         const role = guild.roles.cache.find(r => r.name === roleName);
-        
+
         if (!role) {
             await interaction.reply(`The role "${roleName}" does not exist in this guild.`);
             return;
         }
-    
-        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+
+        if (!hasPermission) {
             if (!interaction.member.roles.cache.has(role.id)) {
                 await interaction.reply("You do not have permission to use this command, and you do not have the specified role.");
                 return;
             }
         }
-    
+
         try {
             const existingRoleData = await Role.findOne({ name: roleName });
             if (existingRoleData) {
@@ -226,16 +224,16 @@ client.on('interactionCreate', async interaction => {
                     existingRoleData.githubUsernames = githubUsernames;
                 }
                 if (status !== null) {
-                    existingRoleData.status = status; 
+                    existingRoleData.status = status;
                 }
                 await existingRoleData.save();
                 await interaction.reply(`Role data for "${roleName}" has been updated.`);
             } else {
-                const roleData = new Role({ 
-                    name: roleName, 
+                const roleData = new Role({
+                    name: roleName,
                     githubRepo: githubRepo || '',
-                    githubUsernames: githubUsernames, 
-                    status: status || '' 
+                    githubUsernames: githubUsernames,
+                    status: status || ''
                 });
                 await roleData.save();
                 await interaction.reply(`Role data for "${roleName}" has been added.`);
@@ -246,54 +244,31 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-        // const githubRepo = options.getString('github_repo');
-        // const githubUsernames = options.getString('github_usernames') ? options.getString('github_usernames').split(',').map(username => username.trim()) : [];
-
-    //     try {
-    //         // Check if role data already exists
-    //         const existingRoleData = await Role.findOne({ name: roleName });
-    //         if (existingRoleData) {
-    //             // Update existing role data
-    //             existingRoleData.githubRepo = githubRepo;
-    //             existingRoleData.githubUsernames = githubUsernames;
-    //             await existingRoleData.save();
-    //             await interaction.reply(`Role data for "${roleName}" has been updated.`);
-    //         } else {
-    //             // Create new role data
-    //             const roleData = new Role({ name: roleName, githubRepo, githubUsernames });
-    //             await roleData.save();
-    //             await interaction.reply(`Role data for "${roleName}" has been added.`);
-    //         }
-    //     } catch (error) {
-    //         console.error('Error adding or updating role data:', error);
-    //         await interaction.reply("An error occurred while adding or updating role data.");
-    //     }
-    // }
     if (commandName === 'setstatus') {
         const roleName = options.getString('role_name');
         const newStatus = options.getString('status');
-    
+
         const guild = interaction.guild;
         const role = guild.roles.cache.find(r => r.name === roleName);
         if (!role) {
             await interaction.reply(`The role "${roleName}" does not exist in this guild.`);
             return;
         }
-    
-        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+
+        if (!hasPermission) {
             if (!interaction.member.roles.cache.has(role.id)) {
                 await interaction.reply("You do not have permission to use this command, and you do not have the specified role.");
                 return;
             }
         }
-    
+
         try {
             const existingRoleData = await Role.findOne({ name: roleName });
             if (!existingRoleData) {
                 await interaction.reply(`No data found for role "${roleName}". Please add role data first using the /addroledata command.`);
                 return;
             }
-    
+
             existingRoleData.status = newStatus;
             await existingRoleData.save();
             await interaction.reply(`Status for role "${roleName}" has been updated to: "${newStatus}".`);
@@ -305,7 +280,7 @@ client.on('interactionCreate', async interaction => {
 
     if (commandName === 'showroledata') {
         const roleName = options.getString('role_name');
-        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        if (!hasPermission) {
             const guild = interaction.guild;
             const role = guild.roles.cache.find(r => r.name === roleName);
             if (!role || !interaction.member.roles.cache.has(role.id)) {
@@ -313,26 +288,26 @@ client.on('interactionCreate', async interaction => {
                 return;
             }
         }
-    
+
         try {
             const roleData = await Role.findOne({ name: roleName });
             if (!roleData) {
                 await interaction.reply(`No data found for role "${roleName}".`);
                 return;
             }
-    
+
             const guild = interaction.guild;
             const role = guild.roles.cache.find(r => r.name === roleName);
             if (!role) {
                 await interaction.reply(`Role "${roleName}" not found in this guild.`);
                 return;
             }
-    
+
             const membersWithRole = guild.members.cache.filter(member => member.roles.cache.has(role.id));
             const memberNames = membersWithRole.map(member => member.user.username).join(', ') || 'No members with this role.';
-    
+
             const githubRepoLink = `https://github.com/${roleData.githubRepo}`;
-    
+
             const embed = new EmbedBuilder()
                 .setColor('#ff6a00')
                 .setTitle(`Role Data for "${roleName}"`)
@@ -351,9 +326,8 @@ client.on('interactionCreate', async interaction => {
                         : 'No marks available' 
                     },
                     { name: 'Members with this Role:', value: memberNames }
-                )
-                .setTimestamp();
-    
+                ).setTimestamp();
+
             await interaction.reply({ embeds: [embed] });
         } catch (error) {
             console.error('Error fetching role data:', error);
