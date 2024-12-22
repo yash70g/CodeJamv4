@@ -25,6 +25,7 @@ const roleSchema = new mongoose.Schema({
     githubRepo: { type: String, required: true },
     githubUsernames: { type: [String], default: [] }, 
     status: { type: String, default: '' },
+    marks: { type: [Number], default: [] },
 });
 
 const Role = mongoose.model('Role', roleSchema);
@@ -134,7 +135,47 @@ client.on('interactionCreate', async interaction => {
     const hasPermission = interaction.member.permissions.has(PermissionsBitField.Flags.Administrator) || 
                           interaction.member.roles.cache.some(role => role.name === "CT25");
 
-                          
+    if (commandName === 'setmarks') {
+        const roleName = options.getString('role_name');
+        const marksInput = options.getString('marks')
+        if (!hasPermission) {
+            await interaction.reply("You do not have permission to use this command.");
+            return;
+        }
+
+        const guild = interaction.guild;
+        const role = guild.roles.cache.find(r => r.name === roleName);
+        if (!role) {
+            await interaction.reply(`The role "${roleName}" does not exist in this guild.`);
+            return;
+        }
+
+        const marks = marksInput.split(',').map(mark => {
+            const trimmedMark = mark.trim();
+            return trimmedMark ? parseInt(trimmedMark) : null;
+        });
+
+        while (marks.length < 3) {
+            marks.push(null);
+        }
+
+        const finalMarks = marks.slice(0, 3);
+
+        try {
+            const existingRoleData = await Role.findOne({ name: roleName });
+            if (!existingRoleData) {
+                await interaction.reply(`No data found for role "${roleName}". Please add role data first using the /addroledata command.`);
+                return;
+            }
+
+            existingRoleData.marks = finalMarks;
+            await existingRoleData.save();
+            await interaction.reply(`Marks for role "${roleName}" have been updated to: ${finalMarks.join(', ')}.`);
+        } catch (error) {
+            console.error('Error updating role marks:', error);
+            await interaction.reply("An error occurred while updating the role marks.");
+        }
+    }
 
     if (commandName === 'addroledata') {
         const roleName = options.getString('role_name');
@@ -263,10 +304,6 @@ client.on('interactionCreate', async interaction => {
                             : 'No usernames available' 
                     },
                     { name: 'Status:', value: roleData.status || 'No status available' },
-                    { name: 'Marks:', value: roleData.marks.length > 0 
-                        ? roleData.marks.join(', ') 
-                        : 'No marks available' 
-                    },
                     { name: 'Members with this Role:', value: memberNames }
                 ).setTimestamp();
 
